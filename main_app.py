@@ -1,7 +1,7 @@
 import sys
 import os
 
-# إضافة مجلد المشروع إلى مسار البحث (لحل مشكلة ModuleNotFoundError)
+# إضافة مجلد المشروع إلى مسار البحث
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
@@ -12,22 +12,86 @@ import numpy as np
 import time
 from datetime import datetime
 
-# استيراد وحدات المشروع
-from thermal_phoneme.phoneme.encoder import (
-    encode_to_phonemes,
-    decode_from_phonemes,
-    encode_to_frequencies,
-    decode_from_frequencies,
-    get_encoding_stats,
-    is_valid_phoneme_text
-)
-from thermal_phoneme.phoneme.phoneme_map import (
-    get_frequency,
-    get_letter,
-    get_all_letters,
-    get_all_frequencies,
-    PHONEME_MAP
-)
+# ============================================================
+# 🗺️ خريطة الحروف العربية والترددات (مضمنة لتجنب أخطاء الاستيراد)
+# ============================================================
+PHONEME_MAP = {
+    'ا': 100.0, 'ب': 105.5, 'ت': 110.0, 'ث': 115.5, 'ج': 120.0,
+    'ح': 125.5, 'خ': 130.0, 'د': 135.5, 'ذ': 140.0, 'ر': 145.5,
+    'ز': 150.0, 'س': 155.5, 'ش': 160.0, 'ص': 165.5, 'ض': 170.0,
+    'ط': 175.5, 'ظ': 180.0, 'ع': 185.5, 'غ': 190.0, 'ف': 195.5,
+    'ق': 200.0, 'ك': 205.5, 'ل': 210.0, 'م': 215.5, 'ن': 220.0,
+    'هـ': 225.5, 'و': 230.0, 'ي': 235.5, 'أ': 240.0, 'ة': 245.5
+}
+
+# خريطة تبديلية تحويلية إضافية للحروف اللاتينية لتوافقه مع النظام
+LATIN_TO_ARABIC_MAP = {
+    'a': 'ا', 'b': 'ب', 'c': 'ث', 'd': 'د', 'e': 'ع', 'f': 'ف',
+    'g': 'ج', 'h': 'ح', 'i': 'ي', 'j': 'ج', 'k': 'ك', 'l': 'ل',
+    'm': 'م', 'n': 'ن', 'o': 'و', 'p': 'ب', 'q': 'ق', 'r': 'ر',
+    's': 'س', 't': 'ت', 'u': 'و', 'v': 'ف', 'w': 'و', 'x': 'ش',
+    'y': 'ي', 'z': 'ز', ' ': 'هـ'
+}
+
+ARABIC_TO_LATIN_MAP = {v: k for k, v in LATIN_TO_ARABIC_MAP.items()}
+
+def get_frequency(char: str) -> float:
+    return PHONEME_MAP.get(char, 0.0)
+
+def get_letter(freq: float) -> str:
+    for letter, f in PHONEME_MAP.items():
+        if abs(f - freq) < 1.0:
+            return letter
+    return 'ا'
+
+def get_all_letters():
+    return list(PHONEME_MAP.keys())
+
+def get_all_frequencies():
+    return list(PHONEME_MAP.values())
+
+def encode_to_phonemes(text: str) -> str:
+    encoded = []
+    for char in text.lower():
+        if char in LATIN_TO_ARABIC_MAP:
+            encoded.append(LATIN_TO_ARABIC_MAP[char])
+        elif char in PHONEME_MAP:
+            encoded.append(char)
+        else:
+            encoded.append('ا')
+    return "".join(encoded)
+
+def decode_from_phonemes(phonemes: str) -> str:
+    decoded = []
+    for char in phonemes:
+        if char in ARABIC_TO_LATIN_MAP:
+            decoded.append(ARABIC_TO_LATIN_MAP[char])
+        else:
+            decoded.append(char)
+    return "".join(decoded)
+
+def encode_to_frequencies(text: str) -> list:
+    phonemes = encode_to_phonemes(text)
+    return [get_frequency(c) for c in phonemes]
+
+def decode_from_frequencies(frequencies: list) -> str:
+    phonemes = "".join([get_letter(f) for f in frequencies])
+    return decode_from_phonemes(phonemes)
+
+def get_encoding_stats(text: str) -> dict:
+    encoded = encode_to_phonemes(text)
+    freqs = encode_to_frequencies(text)
+    valid_freqs = [f for f in freqs if f > 0]
+    return {
+        "original_length": len(text),
+        "encoded_length": len(encoded),
+        "avg_frequency": np.mean(valid_freqs) if valid_freqs else 0.0,
+        "min_frequency": min(valid_freqs) if valid_freqs else 0.0,
+        "max_frequency": max(valid_freqs) if valid_freqs else 0.0
+    }
+
+def is_valid_phoneme_text(text: str) -> bool:
+    return all(c in PHONEME_MAP or c in ARABIC_TO_LATIN_MAP for c in text)
 
 # ============================================================
 # 🎛️ إعداد الصفحة
@@ -232,7 +296,7 @@ with tab1:
                         st.subheader("📡 الترددات المستلمة")
                         st.write(frequencies)
                 else:
-                    st.error("⚠️ النص المدخل يحتوي على أحرف غير عربية صالحة.")
+                    st.error("⚠️ النص المدخل يحتوي على أحرف غير مدعومة.")
             else:
                 st.warning("⚠️ يرجى إدخال نص مشفر لفك التشفير.")
     
