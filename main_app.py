@@ -7,9 +7,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import random
+import functools
+import json
 
 # ============================================================
-# 🌍 خريطة الحروف العربية والترددات (مع فجوة 3 MHz)
+# 🌍 خريطة الحروف العربية والترددات
 # ============================================================
 PHONEME_MAP = {
     'ا': 100.0, 'ب': 103.0, 'ت': 106.0, 'ث': 109.0, 'ج': 112.0,
@@ -20,30 +22,25 @@ PHONEME_MAP = {
     'هـ': 175.0, 'و': 178.0, 'ي': 181.0, 'أ': 184.0, 'ة': 187.0,
 }
 
-# ============================================================
-# 🔄 خريطة التشفير (إنجليزي -> عربي)
-# ============================================================
 LATIN_TO_ARABIC = {
     'a': 'ا', 'b': 'ب', 'c': 'ث', 'd': 'د', 'e': 'ع', 'f': 'ف',
     'g': 'ج', 'h': 'ح', 'i': 'ي', 'j': 'ج', 'k': 'ك', 'l': 'ل',
     'm': 'م', 'n': 'ن', 'o': 'و', 'p': 'ب', 'q': 'ق', 'r': 'ر',
     's': 'س', 't': 'ت', 'u': 'و', 'v': 'ف', 'w': 'و', 'x': 'ش',
-    'y': 'ي', 'z': 'ز', ' ': 'هـ'  # المسافة تتحول إلى 'هـ' (تردد 175 MHz)
+    'y': 'ي', 'z': 'ز', ' ': 'هـ'
 }
 
 ARABIC_TO_LATIN = {v: k for k, v in LATIN_TO_ARABIC.items()}
 
 # ============================================================
-# 🛠️ دوال التشفير وفك التشفير
+# 🛠️ دوال التشفير الأساسية
 # ============================================================
 def get_frequency(char: str) -> float:
-    """تُعيد التردد المطابق للحرف (مع معالجة المسافة)."""
     if char == ' ':
-        return 250.0  # تردد خاص للمسافة
+        return 250.0
     return PHONEME_MAP.get(char, 0.0)
 
 def get_letter(freq: float) -> str:
-    """تُعيد الحرف المطابق للتردد."""
     if abs(freq - 250.0) < 1.0:
         return ' '
     for letter, f in PHONEME_MAP.items():
@@ -58,7 +55,6 @@ def get_all_frequencies():
     return list(PHONEME_MAP.values())
 
 def encode_to_phonemes(text: str) -> str:
-    """تحويل النص الإنجليزي إلى حروف عربية."""
     encoded = []
     for char in text:
         if char in LATIN_TO_ARABIC:
@@ -66,11 +62,10 @@ def encode_to_phonemes(text: str) -> str:
         elif char in PHONEME_MAP:
             encoded.append(char)
         else:
-            encoded.append('ا')  # حرف افتراضي
+            encoded.append('ا')
     return "".join(encoded)
 
 def decode_from_phonemes(phonemes: str) -> str:
-    """تحويل الحروف العربية إلى نص إنجليزي."""
     decoded = []
     for char in phonemes:
         if char in ARABIC_TO_LATIN:
@@ -80,61 +75,130 @@ def decode_from_phonemes(phonemes: str) -> str:
     return "".join(decoded)
 
 def encode_to_frequencies(text: str) -> list:
-    """تحويل النص إلى قائمة ترددات."""
     phonemes = encode_to_phonemes(text)
     return [get_frequency(c) for c in phonemes]
 
 def decode_from_frequencies(frequencies: list) -> str:
-    """تحويل قائمة الترددات إلى نص."""
     phonemes = "".join([get_letter(f) for f in frequencies])
     return decode_from_phonemes(phonemes)
 
 def get_encoding_stats(text: str) -> dict:
-    """إحصائيات التشفير."""
     encoded = encode_to_phonemes(text)
     freqs = encode_to_frequencies(text)
     valid_freqs = [f for f in freqs if f > 0 and f != 250.0]
     return {
         "original_length": len(text),
         "encoded_length": len(encoded),
-        "avg_frequency": np.mean(valid_freqs) if valid_freqs else 0.0,
-        "min_frequency": min(valid_freqs) if valid_freqs else 0.0,
-        "max_frequency": max(valid_freqs) if valid_freqs else 0.0,
+        "avg_frequency": float(np.mean(valid_freqs)) if valid_freqs else 0.0,
+        "min_frequency": float(min(valid_freqs)) if valid_freqs else 0.0,
+        "max_frequency": float(max(valid_freqs)) if valid_freqs else 0.0,
         "space_count": text.count(' ')
     }
 
 def is_valid_phoneme_text(text: str) -> bool:
-    """التحقق من صحة النص المشفر."""
     return all(c in PHONEME_MAP or c in ARABIC_TO_LATIN or c == ' ' for c in text)
 
 # ============================================================
-# 📡 دوال المحاكاة الحرارية
+# 💾 التخزين المؤقت (Caching) - بعد تعريف الدوال
 # ============================================================
-def simulate_environment(frequencies: list, environment: str) -> tuple:
-    """
-    محاكاة تأثير البيئة على الإشارات الحرارية.
-    تُعيد (الترددات المُضعَّفة، معامل التضعيف، جودة الإشارة)
-    """
-    attenuation_map = {
-        "مفتوحة": (0.95, "🟢 ممتازة"),
-        "مبنى خرساني": (0.60, "🟡 متوسطة"),
-        "تحت الأرض": (0.35, "🔴 ضعيفة"),
-        "غابة كثيفة": (0.50, "🟠 منخفضة"),
+@st.cache_data(ttl=3600)
+def cached_encode(text: str) -> str:
+    return encode_to_phonemes(text)
+
+@st.cache_data(ttl=3600)
+def cached_frequencies(text: str) -> list:
+    return encode_to_frequencies(text)
+
+@st.cache_data(ttl=3600)
+def cached_stats(text: str) -> dict:
+    return get_encoding_stats(text)
+
+# ============================================================
+# 🏙️ محاكاة البيئات المتقدمة
+# ============================================================
+ENVIRONMENTS = {
+    "مدينة مزدحمة": {"attenuation": 0.45, "noise": 0.3, "desc": "مباني مرتفعة، تداخل إشارات."},
+    "صحراء مفتوحة": {"attenuation": 0.90, "noise": 0.05, "desc": "رؤية واضحة، تضاريس ملساء."},
+    "منطقة جبلية": {"attenuation": 0.60, "noise": 0.15, "desc": "تضاريس وعرة، انعكاسات متعددة."},
+    "غابة كثيفة": {"attenuation": 0.40, "noise": 0.35, "desc": "أشجار كثيفة، امتصاص عالٍ."},
+    "تحت الأرض": {"attenuation": 0.25, "noise": 0.50, "desc": "أنفاق، جدران سميكة، عزل عالٍ."}
+}
+
+def simulate_environment_advanced(frequencies: list, environment: str) -> dict:
+    env = ENVIRONMENTS.get(environment, ENVIRONMENTS["مدينة مزدحمة"])
+    attenuation = env["attenuation"]
+    noise_level = env["noise"]
+    attenuated = [f * attenuation for f in frequencies]
+    noisy = [float(f + np.random.normal(0, noise_level * 10)) for f in attenuated]
+    signal_strength = float(np.mean(noisy)) if noisy else 0.0
+    if signal_strength > 50:
+        quality = "🟢 ممتازة"
+    elif signal_strength > 30:
+        quality = "🟡 متوسطة"
+    elif signal_strength > 15:
+        quality = "🟠 منخفضة"
+    else:
+        quality = "🔴 ضعيفة جداً"
+    return {
+        "attenuated": attenuated,
+        "noisy": noisy,
+        "quality": quality,
+        "signal_strength": round(signal_strength, 2),
+        "attenuation": attenuation,
+        "description": env["desc"]
     }
-    attenuation, quality = attenuation_map.get(environment, (0.80, "🟢 ممتازة"))
-    attenuated = [freq * attenuation for freq in frequencies]
-    return attenuated, attenuation, quality
 
 def generate_signal(frequencies: list, time_steps: int = 100) -> list:
-    """توليد إشارة حرارية مركبة من الترددات."""
     signal = []
     for i in range(1, time_steps + 1):
-        value = 0
+        value = 0.0
         for j, freq in enumerate(frequencies[:5]):
             if freq > 0:
                 value += 0.2 * np.sin(2 * np.pi * (freq / 100) * i / time_steps + j)
-        signal.append(value)
+        signal.append(float(value))
     return signal
+
+# ============================================================
+# 🌐 دعم اللغات المتعددة
+# ============================================================
+LANGUAGES = {
+    "ar": {
+        "title": "🔥 Thermal-Phoneme",
+        "subtitle": "الاتصالات الثورية بالحروف العربية والإشارات الحرارية",
+        "encrypt": "🔐 تشفير النصوص",
+        "decrypt": "🔓 فك التشفير",
+        "simulate": "📡 محاكاة الإرسال",
+        "analyze": "📈 تحليل الإشارات",
+        "map": "🌍 خريطة التوزيع",
+        "stats": "📊 إحصائيات التشفير",
+        "freqs": "📡 الترددات المولدة"
+    },
+    "en": {
+        "title": "🔥 Thermal-Phoneme",
+        "subtitle": "Revolutionary Communications with Arabic Letters & Thermal Signals",
+        "encrypt": "🔐 Encrypt Text",
+        "decrypt": "🔓 Decrypt",
+        "simulate": "📡 Simulate Transmission",
+        "analyze": "📈 Signal Analysis",
+        "map": "🌍 Distribution Map",
+        "stats": "📊 Encryption Stats",
+        "freqs": "📡 Generated Frequencies"
+    },
+    "fr": {
+        "title": "🔥 Thermal-Phoneme",
+        "subtitle": "Communications révolutionnaires avec lettres arabes et signaux thermiques",
+        "encrypt": "🔐 Chiffrer le texte",
+        "decrypt": "🔓 Déchiffrer",
+        "simulate": "📡 Simuler la transmission",
+        "analyze": "📈 Analyse du signal",
+        "map": "🌍 Carte de distribution",
+        "stats": "📊 Statistiques de chiffrement",
+        "freqs": "📡 Fréquences générées"
+    }
+}
+
+def get_text(key: str, lang: str = "ar") -> str:
+    return LANGUAGES.get(lang, LANGUAGES["ar"]).get(key, key)
 
 # ============================================================
 # 🎛️ إعداد الصفحة
@@ -146,8 +210,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# اختيار اللغة
+lang = st.sidebar.selectbox("🌐 Language / اللغة", ["ar", "en", "fr"], index=0)
+
 # ============================================================
-# 🎨 CSS مخصص
+# 🎨 CSS مخصص مع رسوم متحركة
 # ============================================================
 st.markdown("""
 <style>
@@ -182,28 +249,28 @@ st.markdown("""
         border: 1px solid #00CCFF33; display: inline-block; margin: 3px;
     }
     .copyright { text-align: center; color: #445566; font-size: 0.8em; padding: 20px 0; }
+    @keyframes pulse {
+        0% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(1.05); }
+        100% { opacity: 1; transform: scale(1); }
+    }
+    .pulse { animation: pulse 2s infinite; }
+    .glow-text { text-shadow: 0 0 20px #00CCFF; }
+    .fade-in { animation: fadeIn 1s ease-in; }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 🌟 العنوان الرئيسي
+# 🌟 العنوان
 # ============================================================
-st.markdown("""
+st.markdown(f"""
 <div style='text-align: center; padding: 20px 0;'>
-    <h1 style='font-size: 3.5em; text-shadow: 0 0 40px #00CCFF;'>🔥 Thermal-Phoneme</h1>
-    <p style='color: #88AACC; font-size: 1.2em;'>الاتصالات الثورية بالحروف العربية والإشارات الحرارية</p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class='welcome-box'>
-    <h2>🚀 ثورة في عالم الاتصالات</h2>
-    <p>
-    <b>Thermal-Phoneme</b> هو مشروع يعيد تعريف الاتصالات من جذورها.
-    يستخدم <b>30 حرفاً عربياً</b> كأساس لتوليد ترددات فريدة، وينقلها عبر <b>إشارات حرارية</b>
-    يمكنها اختراق العوائق والتكيف مع البيئة. هذا النظام يلغي الحاجة إلى الترددات المرخصة
-    ويقدم حلاً آمناً ومنخفض التكلفة للاتصالات.
-    </p>
+    <h1 style='font-size: 3.5em; text-shadow: 0 0 40px #00CCFF;' class='pulse'>{get_text('title', lang)}</h1>
+    <p style='color: #88AACC; font-size: 1.2em;'>{get_text('subtitle', lang)}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -216,7 +283,7 @@ with st.sidebar:
     st.subheader("📊 معلومات النظام")
     st.metric("عدد الحروف العربية", len(get_all_letters()))
     st.metric("نطاق الترددات", f"{min(get_all_frequencies())} - {max(get_all_frequencies())} MHz")
-    st.metric("الإصدار", "v0.2.0")
+    st.metric("الإصدار", "v0.3.0")
     st.markdown("---")
     st.success("✅ النظام جاهز")
     st.info(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
@@ -227,33 +294,33 @@ with st.sidebar:
     """)
 
 # ============================================================
-# 📋 علامات التبويب الرئيسية
+# 📋 علامات التبويب
 # ============================================================
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🔐 التشفير بالحروف العربية",
-    "📡 المحاكاة الحرارية",
-    "📈 تحليل الإشارات",
-    "🌍 خريطة التوزيع"
+    get_text('encrypt', lang),
+    get_text('simulate', lang),
+    get_text('analyze', lang),
+    get_text('map', lang)
 ])
 
 # ============================================================
 # 🔐 التبويب الأول: التشفير
 # ============================================================
 with tab1:
-    st.header("🔐 تشفير وفك تشفير النصوص بالحروف العربية")
+    st.header(get_text('encrypt', lang))
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("📝 تشفير نص")
-        input_text = st.text_area("أدخل النص المراد تشفيره:", value="Hello World", key="enc_in")
+        input_text = st.text_area("أدخل النص:", value="Hello World", key="enc_in")
         if st.button("🔐 تشفير", key="btn_enc"):
             if input_text:
-                encoded = encode_to_phonemes(input_text)
-                frequencies = encode_to_frequencies(input_text)
-                stats = get_encoding_stats(input_text)
+                encoded = cached_encode(input_text)
+                frequencies = cached_frequencies(input_text)
+                stats = cached_stats(input_text)
                 st.success(f"✅ النص المشفر: **{encoded}**")
                 
-                st.subheader("📡 الترددات المولدة")
+                st.subheader(get_text('freqs', lang))
                 freq_cols = st.columns(5)
                 for i, (char, freq) in enumerate(zip(encoded, frequencies)):
                     if freq > 0:
@@ -264,7 +331,7 @@ with tab1:
                             </div>
                             """, unsafe_allow_html=True)
                 
-                st.subheader("📊 إحصائيات التشفير")
+                st.subheader(get_text('stats', lang))
                 col_a, col_b, col_c, col_d = st.columns(4)
                 col_a.metric("طول النص الأصلي", stats["original_length"])
                 col_b.metric("طول النص المشفر", stats["encoded_length"])
@@ -281,7 +348,6 @@ with tab1:
                 if is_valid_phoneme_text(encoded_input):
                     decoded = decode_from_phonemes(encoded_input)
                     st.success(f"✅ النص المفكوك: **{decoded}**")
-                    
                     freqs = [get_frequency(c) for c in encoded_input]
                     st.subheader("📡 الترددات المستلمة")
                     st.write(freqs)
@@ -291,35 +357,29 @@ with tab1:
                 st.warning("⚠️ أدخل نصاً مشفراً.")
 
 # ============================================================
-# 📡 التبويب الثاني: المحاكاة الحرارية
+# 📡 التبويب الثاني: المحاكاة
 # ============================================================
 with tab2:
-    st.header("📡 محاكاة الإرسال والاستقبال الحراري")
+    st.header(get_text('simulate', lang))
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("📝 إعدادات الإرسال")
-        send_text = st.text_input("النص المراد إرساله:", value="سلام")
-        power = st.slider("قوة الإشارة (وحدات)", 1.0, 10.0, 5.0, 0.5)
-        environment = st.selectbox("البيئة:", ["مفتوحة", "مبنى خرساني", "تحت الأرض", "غابة كثيفة"])
+        send_text = st.text_input("النص للإرسال:", value="سلام")
+        power = st.slider("قوة الإشارة", 1.0, 10.0, 5.0, 0.5)
+        environment = st.selectbox("البيئة:", list(ENVIRONMENTS.keys()))
         
         if st.button("🚀 بدء المحاكاة", key="sim_btn"):
             encoded = encode_to_phonemes(send_text)
             frequencies = encode_to_frequencies(send_text)
-            
-            attenuated_freqs, attenuation, quality = simulate_environment(frequencies, environment)
-            attenuated_power = power * attenuation
-            
-            signal = generate_signal(attenuated_freqs, 100)
+            result = simulate_environment_advanced(frequencies, environment)
             
             st.success(f"✅ تم إرسال النص: **{encoded}**")
+            st.metric("جودة الإشارة", result["quality"])
+            st.metric("شدة الإشارة", f"{result['signal_strength']:.2f} وحدة")
+            st.caption(f"📝 {result['description']}")
             
-            col_a, col_b, col_c = st.columns(3)
-            col_a.metric("قوة الإرسال", f"{power:.1f} وحدة")
-            col_b.metric("جودة الإشارة", quality)
-            col_c.metric("القوة المستلمة", f"{attenuated_power:.2f} وحدة")
-            
+            signal = generate_signal(result["noisy"], 100)
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=list(range(1, 101)),
@@ -329,38 +389,26 @@ with tab2:
                 line=dict(color='#00CCFF', width=2)
             ))
             fig.update_layout(
-                title=f"الإشارة الحرارية المرسلة ({environment})",
+                title=f"الإشارة الحرارية ({environment})",
                 xaxis_title="الزمن (وحدة)",
                 yaxis_title="الشدة الحرارية",
                 height=300,
                 plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)')
+                paper_bgcolor='rgba(0,0,0,0)'
             )
             st.plotly_chart(fig, use_container_width=True)
-            
-            st.subheader("📡 الترددات المرسلة (بعد التضعيف)")
-            freq_df = pd.DataFrame([
-                {"الحرف": char, "التردد (MHz)": freq, "التردد المستلم (MHz)": round(freq * attenuation, 2)}
-                for char, freq in zip(encoded, frequencies)
-            ])
-            st.dataframe(freq_df, use_container_width=True)
     
     with col2:
         st.subheader("📊 حالة الاستقبال")
-        st.metric("جودة الإشارة", "ممتازة")
-        st.success("🟢 إشارة ممتازة")
-        
-        st.subheader("🌡️ درجة الحرارة المتوقعة")
-        temp = 25 + power * 0.8
-        st.metric("درجة الحرارة", f"{temp:.1f}°C")
+        env_info = ENVIRONMENTS.get(environment, ENVIRONMENTS["مدينة مزدحمة"])
+        st.metric("معامل التضعيف", f"{env_info['attenuation']:.2f}")
+        st.metric("مستوى الضوضاء", f"{env_info['noise']:.2f}")
 
 # ============================================================
-# 📈 التبويب الثالث: تحليل الإشارات
+# 📈 التبويب الثالث: التحليل
 # ============================================================
 with tab3:
-    st.header("📈 تحليل الإشارات الحرارية والطيفية")
+    st.header(get_text('analyze', lang))
     
     col1, col2 = st.columns(2)
     
@@ -372,80 +420,36 @@ with tab3:
         spectrum += np.random.normal(0, 0.5, 200)
         
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=freqs,
-            y=spectrum,
-            mode='lines',
-            name='الطيف الحراري',
-            line=dict(color='#FF6B35', width=2)
-        ))
-        fig.update_layout(
-            title="الطيف الترددي للإشارة الحرارية",
-            xaxis_title="التردد (MHz)",
-            yaxis_title="الشدة",
-            height=400,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
+        fig.add_trace(go.Scatter(x=freqs, y=spectrum, mode='lines', name='الطيف الحراري', line=dict(color='#FF6B35', width=2)))
+        for letter, freq in PHONEME_MAP.items():
+            if freq in [100, 130, 160, 190]:
+                fig.add_vline(x=freq, line_dash="dash", line_color="rgba(255,255,255,0.2)", annotation_text=letter)
+        fig.update_layout(title="الطيف الترددي", xaxis_title="التردد (MHz)", yaxis_title="الشدة", height=400)
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         st.subheader("📊 تحليل الزمن")
         time_data = np.linspace(1, 10, 500)
         signal_data = np.sin(time_data * 2) + 0.5 * np.sin(time_data * 4) + 0.2 * np.random.normal(0, 1, 500)
-        
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=time_data,
-            y=signal_data,
-            mode='lines',
-            name='الإشارة الحية',
-            line=dict(color='#00CCFF', width=2)
-        ))
-        fig.update_layout(
-            title="تذبذب الإشارة الحرارية في الزمن",
-            xaxis_title="الزمن (ثانية)",
-            yaxis_title="الشدة",
-            height=400,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
+        fig.add_trace(go.Scatter(x=time_data, y=signal_data, mode='lines', name='الإشارة الحية', line=dict(color='#00CCFF', width=2)))
+        fig.update_layout(title="تذبذب الإشارة", xaxis_title="الزمن (ثانية)", yaxis_title="الشدة", height=400)
         st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
 # 🌍 التبويب الرابع: الخريطة
 # ============================================================
 with tab4:
-    st.header("🌍 خريطة توزيع الإشارات الحرارية")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.subheader("🗺️ خريطة شدة الإشارة")
-        x = np.linspace(-10, 10, 100)
-        y = np.linspace(-10, 10, 100)
-        X, Y = np.meshgrid(x, y)
-        
-        Z = 100 * np.exp(-0.1 * ((X - 2) ** 2 + (Y - 3) ** 2))
-        Z += 50 * np.exp(-0.05 * ((X + 3) ** 2 + (Y + 2) ** 2))
-        
-        fig = go.Figure(data=go.Contour(
-            z=Z, x=x, y=y,
-            colorscale='Hot',
-            colorbar=dict(title="شدة الإشارة")
-        ))
-        fig.update_layout(
-            title="توزيع الإشارات الحرارية (محطات الإرسال)",
-            height=500,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📊 التغطية")
-        st.metric("نقاط الإرسال", "3")
-        st.metric("التغطية", "78%")
+    st.header(get_text('map', lang))
+    x = np.linspace(-10, 10, 100)
+    y = np.linspace(-10, 10, 100)
+    X, Y = np.meshgrid(x, y)
+    Z = 100 * np.exp(-0.1 * ((X - 2) ** 2 + (Y - 3) ** 2))
+    Z += 50 * np.exp(-0.05 * ((X + 3) ** 2 + (Y + 2) ** 2))
+    Z += 30 * np.exp(-0.08 * ((X - 5) ** 2 + (Y - 5) ** 2))
+    fig = go.Figure(data=go.Contour(z=Z, x=x, y=y, colorscale='Hot', colorbar=dict(title="شدة الإشارة")))
+    fig.update_layout(title="توزيع الإشارات الحرارية", height=500, xaxis_title="المسافة (كم)", yaxis_title="المسافة (كم)")
+    st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
 # 📌 حقوق الملكية
@@ -453,7 +457,7 @@ with tab4:
 st.markdown("---")
 st.markdown("""
 <div class='copyright'>
-    <p>🔥 Thermal-Phoneme v0.2.0 | © 2026 Yousif Zakaria Eissa Arbarb</p>
+    <p>🔥 Thermal-Phoneme v0.3.0 | © 2026 Yousif Zakaria Eissa Arbarb</p>
     <p style='font-size: 0.8em; color: #334455;'>مرخص تحت AGPL-3.0 & Apache 2.0</p>
 </div>
 """, unsafe_allow_html=True)
