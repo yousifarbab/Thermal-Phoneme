@@ -22,3 +22,11 @@ git clone https://github.com/اسم_المستخدم/Thermal-Phoneme.git
 cd Thermal-Phoneme
 pip install -r requirements.txt
 streamlit run main_app.py
+## 📄 الترخيص
+
+هذا المشروع مرخص بموجب **رخصة GNU Affero General Public License الإصدار 3.0**.
+راجع ملف [LICENSE](LICENSE) للحصول على النص الكامل للترخيص.
+
+بالإضافة إلى ذلك، ولتوفير حماية إضافية (خاصة فيما يتعلق ببراءات الاختراع)، يتم توفير بعض الأجزاء أيضاً تحت **رخصة Apache 2.0**.
+
+**حقوق النشر © 2026 Yousif Zakaria Eissa Arbarb. جميع الحقوق محفوظة.**
